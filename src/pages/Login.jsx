@@ -9,14 +9,16 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [checkingAuth, setCheckingAuth] = useState(true); // Login ache kina check korar state
   const navigate = useNavigate();
 
-  // --- AUTO LOGIN LOGIC ---
-  // Aage theke login thakle direct ChatDashboard-e niye jabe
+  // --- FLASH FIX LOGIC ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        navigate("/chat"); // Tomar route jodi alada hoy (jemon /dashboard), tahole ekhane change kore nio
+        navigate("/chat", { replace: true }); // Aage theke login thakle direct chat e niye jabe
+      } else {
+        setCheckingAuth(false); // Login na thakle tobe form show korbe
       }
     });
     return () => unsubscribe();
@@ -27,19 +29,23 @@ const Login = () => {
     setError("");
     
     try {
-      // Permanent Login set kora hocche
       await setPersistence(auth, browserLocalPersistence);
-      
-      // Firebase login
       await signInWithEmailAndPassword(auth, email, password);
-      
-      // Login successful hole ChatDashboard-e pathabe
-      navigate("/chat"); 
+      navigate("/chat", { replace: true }); 
     } catch (err) {
       console.error(err);
       setError("Wrong Email or Password! Please try again.");
     }
   };
+
+  // Firebase check korar somoy login form hide thakbe, WhatsApp er moto clean screen dekhabe
+  if (checkingAuth) {
+    return (
+      <div style={{ height: '100vh', backgroundColor: '#f0f2f5', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ color: '#667781', fontSize: '15px', fontWeight: '500' }}>Loading Crodyto Chat...</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f2f5' }}>
