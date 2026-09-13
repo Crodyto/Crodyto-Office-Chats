@@ -50,7 +50,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
         participants: [currentUserUid, targetUserUid], 
         createdAt: serverTimestamp(),
         unreadCounts: { [currentUserUid]: 0, [targetUserUid]: 0 },
-        joinedAt: { [currentUserUid]: serverTimestamp(), [targetUserUid]: serverTimestamp() } // New Logic
+        joinedAt: { [currentUserUid]: serverTimestamp(), [targetUserUid]: serverTimestamp() }
       }).then(docRef => setActiveRoomId(docRef.id));
     }
     setSearchTerm(""); setSearchedUser(null);
@@ -62,7 +62,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
     try {
       const participants = [...selectedUsers, currentUserUid];
       let initialUnreadCounts = {};
-      let initialJoinedAt = {}; // Join korar time
+      let initialJoinedAt = {}; 
       
       participants.forEach(uid => {
         initialUnreadCounts[uid] = 0;
@@ -77,7 +77,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
         admins: [currentUserUid], 
         createdAt: serverTimestamp(),
         unreadCounts: initialUnreadCounts,
-        joinedAt: initialJoinedAt // New Logic
+        joinedAt: initialJoinedAt 
       });
       setActiveRoomId(newRoomRef.id);
       setShowGroupModal(false); setGroupName(""); setSelectedUsers([]);
@@ -100,7 +100,10 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
         {searchedUser && searchedUser.uid !== currentUserUid && (
           <div onClick={() => startDirectChat(searchedUser.uid)} className="chat-room-item" style={{marginTop: '10px', borderRadius: '8px', backgroundColor: '#e0e7ff'}}>
             <div className="avatar">{searchedUser.username.charAt(0)}</div>
-            <div className="chat-info"><h4>{searchedUser.username}</h4><p>{searchedUser.position}</p></div>
+            <div className="chat-info">
+              <h4>{searchedUser.username}</h4>
+              {/* Position removed from here */}
+            </div>
           </div>
         )}
 
@@ -115,11 +118,11 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
           } else if (room.type === "direct") {
             const otherUserUid = room.participants.find(uid => uid !== currentUserUid);
             if (otherUserUid && usersMap[otherUserUid]) {
-              title = usersMap[otherUserUid].username; subtitle = usersMap[otherUserUid].position;
+              title = usersMap[otherUserUid].username; 
+              subtitle = ""; // Position remove kora holo ekhane
             }
           }
 
-          // --- SIDEBAR TYPING LOGIC ---
           let isTyping = false;
           if (room.typing) {
             const activeTypers = Object.keys(room.typing).filter(uid => uid !== currentUserUid && room.typing[uid] === true);
@@ -143,8 +146,8 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
               </div>
               <div className="chat-info" style={{ flex: 1 }}>
                 <h4>{title}</h4>
-                {/* Typing thakle color sabuj hobe */}
-                <p className={isTyping ? "typing-text-sidebar" : ""}>{subtitle}</p>
+                {/* Typing na thakle ar subtitle faka thakle kichui dekhabe na */}
+                {subtitle && <p className={isTyping ? "typing-text-sidebar" : ""}>{subtitle}</p>}
               </div>
               {unreadCount > 0 && activeRoomId !== room.id && !isTyping && (
                 <div className="unread-badge">{unreadCount}</div>
