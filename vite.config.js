@@ -7,12 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw.js',
       devOptions: {
-        enabled: true // ETA KHUB IMPORTANT: Localhost e test korar jonnye
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        enabled: true
       },
       manifest: {
         name: 'Crodyto Chat',
