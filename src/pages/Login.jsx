@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { auth } from "../firebase";
-// Ekhane setPersistence ar browserLocalPersistence import kora holo
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, onAuthStateChanged } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { FiMessageSquare } from "react-icons/fi";
@@ -13,13 +12,11 @@ const Login = () => {
   const navigate = useNavigate();
 
   // --- AUTO LOGIN LOGIC ---
-  // Page load holei check korbe aage theke login ache kina. 
-  // Jodi thake, tahole direct Dashboard e pathiye debe, password chaibe na!
+  // Aage theke login thakle direct ChatDashboard-e niye jabe
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // NOTE: Tomar dashboard er link jodi onno kichu hoy (jemon "/chat"), tahole ota ekhane likhbe
-        navigate("/dashboard"); 
+        navigate("/chat"); // Tomar route jodi alada hoy (jemon /dashboard), tahole ekhane change kore nio
       }
     });
     return () => unsubscribe();
@@ -30,14 +27,14 @@ const Login = () => {
     setError("");
     
     try {
-      // --- PERMANENT LOGIN SET KORA HOCCHE ---
+      // Permanent Login set kora hocche
       await setPersistence(auth, browserLocalPersistence);
       
-      // Tarpor normal login
+      // Firebase login
       await signInWithEmailAndPassword(auth, email, password);
       
-      // Login success hole chat page e chole jabe
-      navigate("/dashboard"); 
+      // Login successful hole ChatDashboard-e pathabe
+      navigate("/chat"); 
     } catch (err) {
       console.error(err);
       setError("Wrong Email or Password! Please try again.");
