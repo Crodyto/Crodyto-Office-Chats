@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"; // useRef add kora holo
+import { useState, useEffect, useRef } from "react";
 import { collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { FiSearch, FiUsers, FiPlus } from "react-icons/fi";
@@ -13,17 +13,14 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
 
-  // --- NOTIFICATION ER JONNYE REF GULO ---
   const activeRoomIdRef = useRef(activeRoomId);
   const prevUnreadRef = useRef({});
-  const initialLoadRef = useRef(true); // Prothom bar load hole jate eksathe sob notification na ashe
+  const initialLoadRef = useRef(true);
 
-  // Active chat track korchi jate jei chat khola ache tar notification na ashe
   useEffect(() => {
     activeRoomIdRef.current = activeRoomId;
   }, [activeRoomId]);
 
-  // 1. App khullei Notification er permission chaibe
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
@@ -43,15 +40,12 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
     const q = query(collection(db, "chatRooms"), where("participants", "array-contains", currentUserUid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       
-      // --- NOTIFICATION LOGIC ---
       if (initialLoadRef.current) {
-        // App prothom load hole shudhu purono message er count save korbo, notification pathabo na
         snapshot.forEach((doc) => {
           prevUnreadRef.current[doc.id] = doc.data().unreadCounts?.[currentUserUid] || 0;
         });
         initialLoadRef.current = false;
       } else {
-        // Ebar theke kono notun change hole check korbo
         snapshot.docChanges().forEach((change) => {
           if (change.type === "added" || change.type === "modified") {
             const data = change.doc.data();
@@ -59,29 +53,36 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
             const newUnreadCount = data.unreadCounts?.[currentUserUid] || 0;
             const oldUnreadCount = prevUnreadRef.current[roomId] || 0;
 
-            // Jodi unread count aager theke bare (mane notun message ashe) ar oi chat-ta jodi khola na thake
             if (newUnreadCount > oldUnreadCount && activeRoomIdRef.current !== roomId) {
-              
-              // Browser e notification allow kora thakle pathabo
               if ("Notification" in window && Notification.permission === "granted") {
-                let senderName = "Someone";
+                let senderName = "New Message";
                 if (data.type === "group") {
-                  senderName = data.groupName; // Group er nam dekhabe
+                  senderName = data.groupName;
                 } else {
                   const otherUserUid = data.participants.find(uid => uid !== currentUserUid);
-                  senderName = usersMap[otherUserUid]?.username || "New Message"; // User er nam dekhabe
+                  senderName = usersMap[otherUserUid]?.username || "Crodyto Chat";
                 }
 
-                // Notification toiri kora hocche
-                new Notification(senderName, {
-                  body: "You have a new message",
-                  icon: "/icon-192x192.png", // Tomar public folder er PWA logo ta dekhabe
-                  badge: "/icon-192x192.png",
-                  vibrate: [200, 100, 200] // Mobile vibrate korbe
-                });
+                // Service Worker er মাধ্যমে background notification trigger করা
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                  navigator.serviceWorker.ready.then(registration => {
+                    registration.showNotification(senderName, {
+                      body: "You have received a new message",
+                      icon: "/icon-192x192.png",
+                      badge: "/icon-192x192.png",
+                      vibrate: [200, 100, 200]
+                    });
+                  });
+                } else {
+                  new Notification(senderName, {
+                    body: "You have received a new message",
+                    icon: "/icon-192x192.png",
+                    badge: "/icon-192x192.png",
+                    vibrate: [200, 100, 200]
+                  });
+                }
               }
             }
-            // Update old count
             prevUnreadRef.current[roomId] = newUnreadCount;
           }
         });
@@ -92,7 +93,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
       setChatRooms(rooms);
     });
     return () => unsubscribe();
-  }, [currentUserUid, usersMap]); // usersMap dependency add kora holo jate nam theek ashe
+  }, [currentUserUid, usersMap]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -172,7 +173,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {chatRooms.map((room) => {
+        {chatRooms.name || chatRooms.map((room) => {
           let title = "User"; let subtitle = ""; let isGroup = false;
           if (room.type === "group") {
             title = room.groupName; subtitle = `${room.participants.length} members`; isGroup = true;
