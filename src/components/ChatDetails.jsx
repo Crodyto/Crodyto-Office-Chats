@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FiUsers, FiMoreVertical, FiUser, FiX, FiUserPlus } from "react-icons/fi";
+import { FiUsers, FiMoreVertical, FiUser, FiX, FiUserPlus, FiTrash2, FiLogOut } from "react-icons/fi";
 import "../App.css";
 
 const ChatDetails = ({ 
@@ -7,10 +7,11 @@ const ChatDetails = ({
   creatorUid, adminsArray, isAdmin, isCreator,
   usersNotInGroup, onClose,
   handleAddMember, handleRemoveMember, handleMakeAdmin, handleRemoveAdmin,
-  onStartDirectChat // Notun props: Message option er jonnye
+  onStartDirectChat,
+  handleClearChat, handleDeleteGroup, handleLeaveGroup // Notun 3 te function aslo
 }) => {
   const [openMenuUid, setOpenMenuUid] = useState(null);
-  const [showAddMemberModal, setShowAddMemberModal] = useState(false); // Add member modal er state
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
 
   if (!roomData) return null;
 
@@ -21,7 +22,6 @@ const ChatDetails = ({
 
   return (
     <>
-      {/* Main Details Modal */}
       <div className="modal-overlay" onClick={() => setOpenMenuUid(null)}>
         <div className="modal-box" style={{maxWidth: '400px', padding: '20px', position: 'relative'}} onClick={(e) => e.stopPropagation()}>
           
@@ -45,6 +45,11 @@ const ChatDetails = ({
                   <p style={{fontSize: '13px', color: '#667781', marginBottom: '5px'}}>ID</p>
                   <p style={{fontSize: '14px', color: '#111b21'}}>{otherUid}</p>
                 </div>
+
+                {/* CLEAR CHAT BUTTON */}
+                <button className="btn-danger-large" onClick={handleClearChat}>
+                  <FiTrash2 size={18} /> Clear Chat
+                </button>
               </div>
             );
           })()}
@@ -60,15 +65,13 @@ const ChatDetails = ({
                 <p style={{fontSize: '13px', color: '#667781'}}>{roomData.participants.length} Members</p>
               </div>
               
-              {/* Member List */}
-              <div className="user-select-list" style={{maxHeight: '280px', overflowY: 'auto', border: 'none', padding: '0'}}>
+              <div className="user-select-list" style={{maxHeight: '230px', overflowY: 'auto', border: 'none', padding: '0'}}>
                 
-                {/* Add Member Button (Only for Admins) */}
                 {isAdmin && usersNotInGroup.length > 0 && (
                   <div 
                     className="user-select-item" 
                     onClick={() => setShowAddMemberModal(true)}
-                    style={{display: 'flex', alignItems: 'center', gap: '15px', padding: '12px 5px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer'}}
+                    style={{display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 5px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer'}}
                   >
                     <div className="avatar" style={{width: '35px', height: '35px', minWidth: '35px', backgroundColor: '#00a884', color: 'white'}}>
                       <FiUserPlus size={18} />
@@ -83,7 +86,7 @@ const ChatDetails = ({
                   
                   return (
                     <div key={uid} className="user-select-item" style={{cursor: 'default', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0f2f5', padding: '10px 5px'}}>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                         <div className="avatar" style={{width: '35px', height: '35px', minWidth: '35px', fontSize: '14px'}}>
                           {usersMap[uid]?.username?.charAt(0) || <FiUser />}
                         </div>
@@ -96,7 +99,6 @@ const ChatDetails = ({
                         </div>
                       </div>
 
-                      {/* 3-DOT MENU LOGIC */}
                       {uid !== currentUserUid && (
                         <div className="relative-box">
                           <button className="btn-3dot" onClick={() => toggleMenu(uid)}>
@@ -105,12 +107,10 @@ const ChatDetails = ({
                           
                           {openMenuUid === uid && (
                             <div className="dropdown-menu">
-                              {/* Message Option (Sobar jonnye) */}
                               <button className="dropdown-item" onClick={() => { onStartDirectChat(uid); onClose(); }}>
                                 Message {usersMap[uid]?.username}
                               </button>
 
-                              {/* Admin Options (Sudhu admin der jonnye) */}
                               {isAdmin && !isUserCreator && (
                                 <>
                                   {isUserAdmin && isCreator && (
@@ -136,12 +136,23 @@ const ChatDetails = ({
                   )
                 })}
               </div>
+
+              {/* DELETE / LEAVE GROUP BUTTON */}
+              {isCreator ? (
+                <button className="btn-danger-large" onClick={handleDeleteGroup}>
+                  <FiTrash2 size={18} /> Delete Group
+                </button>
+              ) : (
+                <button className="btn-danger-large" onClick={handleLeaveGroup}>
+                  <FiLogOut size={18} /> Leave Group
+                </button>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {/* --- ADD NEW MEMBER MODAL (Inner Modal) --- */}
+      {/* Add Member Modal logic as before... */}
       {showAddMemberModal && (
         <div className="modal-overlay" style={{zIndex: 1010}}>
           <div className="modal-box" style={{maxWidth: '350px'}}>
@@ -156,17 +167,11 @@ const ChatDetails = ({
               ) : (
                 usersNotInGroup.map(u => (
                   <div key={u.uid} className="user-select-item" style={{justifyContent: 'space-between', padding: '10px', borderBottom: '1px solid #f0f2f5'}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                       <div className="avatar" style={{width: '30px', height: '30px', minWidth: '30px', fontSize: '12px'}}>{u.username.charAt(0)}</div>
                       <span style={{fontSize: '14px', fontWeight: '500'}}>{u.username}</span>
                     </div>
-                    <button 
-                      onClick={() => {
-                        handleAddMember(u.uid);
-                        // Ekhane chaile setShowAddMemberModal(false) korte paro jate ekta add korlei bondho hoye jay
-                      }} 
-                      className="btn-primary" style={{padding: '6px 12px', fontSize: '12px'}}
-                    >
+                    <button onClick={() => handleAddMember(u.uid)} className="btn-primary" style={{padding: '6px 12px', fontSize: '12px'}}>
                       Add
                     </button>
                   </div>
