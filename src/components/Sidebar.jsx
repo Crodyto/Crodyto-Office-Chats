@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // useRef add kora holo
 import { collection, query, where, onSnapshot, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { FiSearch, FiUsers, FiPlus } from "react-icons/fi";
@@ -13,6 +13,23 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
 
+  // --- NOTIFICATION ER JONNYE REF GULO ---
+  const activeRoomIdRef = useRef(activeRoomId);
+  const prevUnreadRef = useRef({});
+  const initialLoadRef = useRef(true); // Prothom bar load hole jate eksathe sob notification na ashe
+
+  // Active chat track korchi jate jei chat khola ache tar notification na ashe
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
+
+  // 1. App khullei Notification er permission chaibe
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
       let map = {};
@@ -25,12 +42,57 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
   useEffect(() => {
     const q = query(collection(db, "chatRooms"), where("participants", "array-contains", currentUserUid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      
+      // --- NOTIFICATION LOGIC ---
+      if (initialLoadRef.current) {
+        // App prothom load hole shudhu purono message er count save korbo, notification pathabo na
+        snapshot.forEach((doc) => {
+          prevUnreadRef.current[doc.id] = doc.data().unreadCounts?.[currentUserUid] || 0;
+        });
+        initialLoadRef.current = false;
+      } else {
+        // Ebar theke kono notun change hole check korbo
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added" || change.type === "modified") {
+            const data = change.doc.data();
+            const roomId = change.doc.id;
+            const newUnreadCount = data.unreadCounts?.[currentUserUid] || 0;
+            const oldUnreadCount = prevUnreadRef.current[roomId] || 0;
+
+            // Jodi unread count aager theke bare (mane notun message ashe) ar oi chat-ta jodi khola na thake
+            if (newUnreadCount > oldUnreadCount && activeRoomIdRef.current !== roomId) {
+              
+              // Browser e notification allow kora thakle pathabo
+              if ("Notification" in window && Notification.permission === "granted") {
+                let senderName = "Someone";
+                if (data.type === "group") {
+                  senderName = data.groupName; // Group er nam dekhabe
+                } else {
+                  const otherUserUid = data.participants.find(uid => uid !== currentUserUid);
+                  senderName = usersMap[otherUserUid]?.username || "New Message"; // User er nam dekhabe
+                }
+
+                // Notification toiri kora hocche
+                new Notification(senderName, {
+                  body: "You have a new message",
+                  icon: "/icon-192x192.png", // Tomar public folder er PWA logo ta dekhabe
+                  badge: "/icon-192x192.png",
+                  vibrate: [200, 100, 200] // Mobile vibrate korbe
+                });
+              }
+            }
+            // Update old count
+            prevUnreadRef.current[roomId] = newUnreadCount;
+          }
+        });
+      }
+
       let rooms = [];
       snapshot.forEach((doc) => { rooms.push({ id: doc.id, ...doc.data() }); });
       setChatRooms(rooms);
     });
     return () => unsubscribe();
-  }, [currentUserUid]);
+  }, [currentUserUid, usersMap]); // usersMap dependency add kora holo jate nam theek ashe
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -102,7 +164,6 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
             <div className="avatar">{searchedUser.username.charAt(0)}</div>
             <div className="chat-info">
               <h4>{searchedUser.username}</h4>
-              {/* Position removed from here */}
             </div>
           </div>
         )}
@@ -119,7 +180,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
             const otherUserUid = room.participants.find(uid => uid !== currentUserUid);
             if (otherUserUid && usersMap[otherUserUid]) {
               title = usersMap[otherUserUid].username; 
-              subtitle = ""; // Position remove kora holo ekhane
+              subtitle = ""; 
             }
           }
 
@@ -146,7 +207,6 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
               </div>
               <div className="chat-info" style={{ flex: 1 }}>
                 <h4>{title}</h4>
-                {/* Typing na thakle ar subtitle faka thakle kichui dekhabe na */}
                 {subtitle && <p className={isTyping ? "typing-text-sidebar" : ""}>{subtitle}</p>}
               </div>
               {unreadCount > 0 && activeRoomId !== room.id && !isTyping && (
