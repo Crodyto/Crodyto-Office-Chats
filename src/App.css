@@ -47,19 +47,23 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  height: 100dvh;
   max-height: 100vh;
-  max-height: 100dvh;
   overflow: hidden;
   position: relative;
 }
 
-/* --- Chat Header (Fixed permanently at top) --- */
+.chatbox-wrapper {
+  flex: 1;
+  background-color: #efeae2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* --- Chat Header (Fixed at top) --- */
 .chat-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
   height: 65px;
   min-height: 65px;
   background-color: #f0f2f5;
@@ -68,21 +72,10 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
-  z-index: 100;
+  z-index: 10;
 }
 .chat-header-info h4 { font-size: 16px; color: #111b21; font-weight: 600; margin-bottom: 2px; }
 .chat-header-info p { font-size: 13px; color: #667781; }
-
-.chatbox-wrapper {
-  flex: 1;
-  background-color: #efeae2;
-  display: flex;
-  flex-direction: column;
-  margin-top: 65px; /* Header er sathe overlap theke bachar jonnye */
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
 
 /* --- Message List (Scrollable middle area) --- */
 .message-list {
@@ -144,7 +137,7 @@ body {
   gap: 10px;
   align-items: center;
   padding: 10px 20px;
-  z-index: 100;
+  z-index: 10;
 }
 .chat-form-input {
   flex: 1;
