@@ -6,15 +6,23 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', // Automatic update hobe notun code push korle
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      devOptions: {
+        enabled: true // ETA KHUB IMPORTANT: Localhost e test korar jonnye
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+      },
       manifest: {
         name: 'Crodyto Chat',
         short_name: 'Crodyto',
-        description: 'Secure communication platform for Crodyto Employees',
-        theme_color: '#00a884', /* WhatsApp er green color */
+        description: 'Secure communication platform for Crodyto',
+        theme_color: '#00a884',
         background_color: '#efeae2',
-        display: 'standalone', /* Browser hide kore app er moto open hobe */
+        display: 'standalone',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: '/icon-192x192.png',
@@ -24,7 +32,8 @@ export default defineConfig({
           {
             src: '/icon-512x512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }
