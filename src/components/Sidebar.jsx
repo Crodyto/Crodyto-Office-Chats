@@ -16,10 +16,15 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
   const activeRoomIdRef = useRef(activeRoomId);
   const prevUnreadRef = useRef({});
   const initialLoadRef = useRef(true);
+  const usersMapRef = useRef(usersMap);
 
   useEffect(() => {
     activeRoomIdRef.current = activeRoomId;
   }, [activeRoomId]);
+
+  useEffect(() => {
+    usersMapRef.current = usersMap;
+  }, [usersMap]);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -30,16 +35,20 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
       let map = {};
-      snapshot.forEach((doc) => { map[doc.data().uid] = doc.data(); });
+      snapshot.forEach((doc) => { 
+        const data = doc.data();
+        map[data.uid || doc.id] = { uid: doc.id, ...data }; 
+      });
       setUsersMap(map);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
+    if (!currentUserUid) return;
+
     const q = query(collection(db, "chatRooms"), where("participants", "array-contains", currentUserUid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      
       if (initialLoadRef.current) {
         snapshot.forEach((doc) => {
           prevUnreadRef.current[doc.id] = doc.data().unreadCounts?.[currentUserUid] || 0;
@@ -57,13 +66,12 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
               if ("Notification" in window && Notification.permission === "granted") {
                 let senderName = "New Message";
                 if (data.type === "group") {
-                  senderName = data.groupName;
+                  senderName = data.groupName || "Group Chat";
                 } else {
-                  const otherUserUid = data.participants.find(uid => uid !== currentUserUid);
-                  senderName = usersMap[otherUserUid]?.username || "Crodyto Chat";
+                  const otherUserUid = data.participants?.find(uid => uid !== currentUserUid);
+                  senderName = usersMapRef.current[otherUserUid]?.username || "Crodyto Chat";
                 }
 
-                // Service Worker er মাধ্যমে background notification trigger করা
                 if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
                   navigator.serviceWorker.ready.then(registration => {
                     registration.showNotification(senderName, {
@@ -92,31 +100,50 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
       snapshot.forEach((doc) => { rooms.push({ id: doc.id, ...doc.data() }); });
       setChatRooms(rooms);
     });
+
     return () => unsubscribe();
-  }, [currentUserUid, usersMap]);
+  }, [currentUserUid]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (searchTerm.trim() === "") return;
-    const q = query(collection(db, "users"), where("username", "==", searchTerm.toLowerCase()));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) setSearchedUser(querySnapshot.docs[0].data());
-    else { setSearchedUser(null); alert("No user found!"); }
+    const cleanedSearch = searchTerm.trim().toLowerCase();
+    if (cleanedSearch === "") return;
+    
+    try {
+      const q = query(collection(db, "users"), where("username", "==", cleanedSearch));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const doc = querySnapshot.docs[0];
+        setSearchedUser({ uid: doc.id, ...doc.data() });
+      } else {
+        setSearchedUser(null);
+        alert("No user found!");
+      }
+    } catch (error) {
+      console.error("Error searching user:", error);
+    }
   };
 
   const startDirectChat = async (targetUserUid) => {
-    const existingRoom = chatRooms.find(room => room.type === "direct" && room.participants.includes(targetUserUid));
-    if (existingRoom) setActiveRoomId(existingRoom.id);
-    else {
-      await addDoc(collection(db, "chatRooms"), {
-        type: "direct", 
-        participants: [currentUserUid, targetUserUid], 
-        createdAt: serverTimestamp(),
-        unreadCounts: { [currentUserUid]: 0, [targetUserUid]: 0 },
-        joinedAt: { [currentUserUid]: serverTimestamp(), [targetUserUid]: serverTimestamp() }
-      }).then(docRef => setActiveRoomId(docRef.id));
+    const existingRoom = chatRooms.find(room => room.type === "direct" && room.participants?.includes(targetUserUid));
+    if (existingRoom) {
+      setActiveRoomId(existingRoom.id);
+    } else {
+      try {
+        const docRef = await addDoc(collection(db, "chatRooms"), {
+          type: "direct", 
+          participants: [currentUserUid, targetUserUid], 
+          createdAt: serverTimestamp(),
+          unreadCounts: { [currentUserUid]: 0, [targetUserUid]: 0 },
+          joinedAt: { [currentUserUid]: serverTimestamp(), [targetUserUid]: serverTimestamp() }
+        });
+        setActiveRoomId(docRef.id);
+      } catch (error) {
+        console.error("Error starting direct chat:", error);
+      }
     }
-    setSearchTerm(""); setSearchedUser(null);
+    setSearchTerm("");
+    setSearchedUser(null);
   };
 
   const handleCreateGroup = async (e) => {
@@ -134,7 +161,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
 
       const newRoomRef = await addDoc(collection(db, "chatRooms"), {
         type: "group", 
-        groupName: groupName, 
+        groupName: groupName.trim(), 
         participants: participants,
         createdBy: currentUserUid, 
         admins: [currentUserUid], 
@@ -143,26 +170,40 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
         joinedAt: initialJoinedAt 
       });
       setActiveRoomId(newRoomRef.id);
-      setShowGroupModal(false); setGroupName(""); setSelectedUsers([]);
-    } catch (error) { console.error(error); }
+      setShowGroupModal(false); 
+      setGroupName(""); 
+      setSelectedUsers([]);
+    } catch (error) { 
+      console.error("Error creating group:", error); 
+    }
   };
 
   const toggleUserSelection = (uid) => {
-    if (selectedUsers.includes(uid)) setSelectedUsers(selectedUsers.filter(id => id !== uid));
-    else setSelectedUsers([...selectedUsers, uid]);
+    if (selectedUsers.includes(uid)) {
+      setSelectedUsers(selectedUsers.filter(id => id !== uid));
+    } else {
+      setSelectedUsers([...selectedUsers, uid]);
+    }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="search-section">
         <form onSubmit={handleSearch} className="search-group">
-          <input type="text" placeholder="Search username..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="form-input" style={{flex: 1}} />
+          <input 
+            type="text" 
+            placeholder="Search username..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            className="form-input" 
+            style={{flex: 1}} 
+          />
           <button type="submit" className="btn-primary" style={{width: 'auto'}}><FiSearch /></button>
         </form>
 
         {searchedUser && searchedUser.uid !== currentUserUid && (
-          <div onClick={() => startDirectChat(searchedUser.uid)} className="chat-room-item" style={{marginTop: '10px', borderRadius: '8px', backgroundColor: '#e0e7ff'}}>
-            <div className="avatar">{searchedUser.username.charAt(0)}</div>
+          <div onClick={() => startDirectChat(searchedUser.uid)} className="chat-room-item" style={{marginTop: '10px', borderRadius: '8px', backgroundColor: '#e0e7ff', cursor: 'pointer'}}>
+            <div className="avatar">{(searchedUser.username || "U").charAt(0).toUpperCase()}</div>
             <div className="chat-info">
               <h4>{searchedUser.username}</h4>
             </div>
@@ -173,14 +214,19 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {chatRooms.name || chatRooms.map((room) => {
-          let title = "User"; let subtitle = ""; let isGroup = false;
+        {chatRooms.map((room) => {
+          let title = "User"; 
+          let subtitle = ""; 
+          let isGroup = false;
+
           if (room.type === "group") {
-            title = room.groupName; subtitle = `${room.participants.length} members`; isGroup = true;
+            title = room.groupName || "Group"; 
+            subtitle = `${room.participants?.length || 0} members`; 
+            isGroup = true;
           } else if (room.type === "direct") {
-            const otherUserUid = room.participants.find(uid => uid !== currentUserUid);
+            const otherUserUid = room.participants?.find(uid => uid !== currentUserUid);
             if (otherUserUid && usersMap[otherUserUid]) {
-              title = usersMap[otherUserUid].username; 
+              title = usersMap[otherUserUid].username || "User"; 
               subtitle = ""; 
             }
           }
@@ -204,7 +250,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
           return (
             <div key={room.id} onClick={() => setActiveRoomId(room.id)} className={`chat-room-item ${activeRoomId === room.id ? "active" : ""}`}>
               <div className="avatar" style={{ backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f' }}>
-                {isGroup ? <FiUsers /> : title.charAt(0)}
+                {isGroup ? <FiUsers /> : (title || "U").charAt(0).toUpperCase()}
               </div>
               <div className="chat-info" style={{ flex: 1 }}>
                 <h4>{title}</h4>
@@ -231,7 +277,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
                   return (
                     <div key={user.uid} className="user-select-item" onClick={() => toggleUserSelection(user.uid)}>
                       <input type="checkbox" checked={selectedUsers.includes(user.uid)} readOnly />
-                      <span>{user.username} <small style={{color: '#888'}}>({user.position})</small></span>
+                      <span>{user.username} <small style={{color: '#888'}}>({user.position || "Member"})</small></span>
                     </div>
                   );
                 })}
@@ -247,4 +293,5 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
     </div>
   );
 };
+
 export default Sidebar;
