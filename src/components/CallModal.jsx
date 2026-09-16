@@ -9,7 +9,7 @@ import {
   serverTimestamp, 
   updateDoc 
 } from "firebase/firestore";
-import { FiPhoneOff, FiPhone, FiMic, FiMicOff } from "react-icons/fi";
+import { FiPhoneOff, FiPhone, FiMic, FiMicOff, FiUser, FiVideo, FiVideoOff } from "react-icons/fi";
 import "../App.css";
 
 const servers = {
@@ -24,10 +24,12 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
   const [isAnswered, setIsAnswered] = useState(false);
   const [hasAccepted, setHasAccepted] = useState(!incomingCallData);
   const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false); // Video On/Off state
 
   const pc = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const isMounted = useRef(true);
   const hasSetRemoteDesc = useRef(false);
   const candidateQueue = useRef([]);
@@ -35,6 +37,57 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
   const callDocRef = doc(db, "rooms", roomId, "calls", "currentCall");
   const callerCandidatesCollection = collection(callDocRef, "callerCandidates");
   const calleeCandidatesCollection = collection(callDocRef, "calleeCandidates");
+
+  // Ringback Tone
+  useEffect(() => {
+    const shouldRing = (!incomingCallData && !isAnswered) || (incomingCallData && !hasAccepted);
+    if (!shouldRing) return;
+
+    let stopAudio = null;
+
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (AudioContext) {
+        const ctx = new AudioContext();
+
+        const playRingTone = () => {
+          if (ctx.state === "suspended") ctx.resume();
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc1.frequency.value = 440;
+          osc2.frequency.value = 480;
+
+          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.5);
+
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ctx.destination);
+
+          osc1.start();
+          osc2.start();
+          osc1.stop(ctx.currentTime + 1.5);
+          osc2.stop(ctx.currentTime + 1.5);
+        };
+
+        playRingTone();
+        const interval = setInterval(playRingTone, 3000);
+
+        stopAudio = () => {
+          clearInterval(interval);
+          if (ctx.state !== "closed") ctx.close();
+        };
+      }
+    } catch (e) {
+      console.error("Audio Context Error:", e);
+    }
+
+    return () => {
+      if (stopAudio) stopAudio();
+    };
+  }, [incomingCallData, isAnswered, hasAccepted]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -56,11 +109,23 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     };
   }, []);
 
+  useEffect(() => {
+    if (remoteStream) {
+      if (callType === "video" && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+      }
+    }
+  }, [remoteStream, callType, hasAccepted]);
+
   const createPeerConnection = () => {
     pc.current = new RTCPeerConnection(servers);
     pc.current.ontrack = (event) => {
-      setRemoteStream(event.streams[0]);
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      }
     };
   };
 
@@ -68,14 +133,20 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: callType === "video",
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
       });
       if (!isMounted.current) {
         stream.getTracks().forEach((t) => t.stop());
         return null;
       }
       setLocalStream(stream);
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      if (callType === "video" && localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
       return stream;
     } catch (err) {
       console.error("Camera/Microphone access error:", err);
@@ -96,7 +167,7 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
         candidateQueue.current.push(candidateData);
       }
     } catch (e) {
-      // Ignore benign duplicate candidate errors
+      // Ignore duplicate candidate errors
     }
   };
 
@@ -124,7 +195,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
       status: "calling"
     });
 
-    // Firestore Answer Listener (Ref-based locking)
     onSnapshot(callDocRef, async (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data();
@@ -140,7 +210,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
           await pc.current.setRemoteDescription(new RTCSessionDescription(data.answer));
           setIsAnswered(true);
 
-          // Drain queued candidates
           while (candidateQueue.current.length > 0) {
             const cand = candidateQueue.current.shift();
             await addCandidateSafely(cand);
@@ -156,7 +225,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
       }
     });
 
-    // Callee Candidates Listener
     onSnapshot(calleeCandidatesCollection, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
@@ -194,7 +262,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
       });
       setIsAnswered(true);
 
-      // Drain queued candidates
       while (candidateQueue.current.length > 0) {
         const cand = candidateQueue.current.shift();
         await addCandidateSafely(cand);
@@ -203,7 +270,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
       console.error("Error during call acceptance:", err);
     }
 
-    // Caller Candidates Listener
     onSnapshot(callerCandidatesCollection, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added") {
@@ -213,12 +279,23 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     });
   };
 
+  // Toggle Microphone (Audio)
   const toggleMute = () => {
     if (!localStream) return;
     const audioTrack = localStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       setIsMuted(!audioTrack.enabled);
+    }
+  };
+
+  // Toggle Camera (Video)
+  const toggleVideo = () => {
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setIsVideoOff(!videoTrack.enabled);
     }
   };
 
@@ -257,6 +334,9 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
   return (
     <div className="call-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       
+      {/* Hidden Audio Element for Remote Voice Output */}
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+
       {/* Receiver Ringing Screen */}
       {incomingCallData && !hasAccepted ? (
         <div style={{ textAlign: 'center', color: 'white' }}>
@@ -279,20 +359,38 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
             {isAnswered ? (callType === 'video' ? 'Video Connected' : 'Audio Connected') : 'Ringing...'}
           </h2>
           
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-            {callType === 'video' && (
-              <video ref={localVideoRef} autoPlay playsInline muted style={{ width: '150px', height: '200px', backgroundColor: '#333', borderRadius: '10px', objectFit: 'cover' }} />
-            )}
-            {callType === 'video' && (
+          {callType === 'audio' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
+              <div style={{ width: '120px', height: '120px', borderRadius: '50%', backgroundColor: '#00a884', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '48px', marginBottom: '15px' }}>
+                <FiUser />
+              </div>
+              <p style={{ color: '#aaa', fontSize: '14px' }}>{isAnswered ? "Voice Call Active" : "Calling..."}</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+              <video ref={localVideoRef} autoPlay playsInline muted style={{ width: '150px', height: '200px', backgroundColor: '#333', borderRadius: '10px', objectFit: 'cover', display: isVideoOff ? 'none' : 'block' }} />
+              {isVideoOff && (
+                <div style={{ width: '150px', height: '200px', backgroundColor: '#222', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa' }}>
+                  <FiVideoOff size={32} />
+                </div>
+              )}
               <video ref={remoteVideoRef} autoPlay playsInline style={{ width: '300px', height: '400px', backgroundColor: '#222', borderRadius: '10px', objectFit: 'cover' }} />
-            )}
-          </div>
+            </div>
+          )}
 
+          {/* Call Control Buttons */}
           <div style={{ display: 'flex', gap: '20px' }}>
-            <button onClick={toggleMute} style={{ padding: '15px', borderRadius: '50%', border: 'none', backgroundColor: isMuted ? '#ff4757' : '#555', color: 'white', cursor: 'pointer' }}>
+            <button onClick={toggleMute} style={{ padding: '15px', borderRadius: '50%', border: 'none', backgroundColor: isMuted ? '#ff4757' : '#555', color: 'white', cursor: 'pointer' }} title="Toggle Mic">
               {isMuted ? <FiMicOff size={24} /> : <FiMic size={24} />}
             </button>
-            <button onClick={() => hangUp(true)} style={{ padding: '15px', borderRadius: '50%', border: 'none', backgroundColor: '#ff4757', color: 'white', cursor: 'pointer' }}>
+            
+            {callType === 'video' && (
+              <button onClick={toggleVideo} style={{ padding: '15px', borderRadius: '50%', border: 'none', backgroundColor: isVideoOff ? '#ff4757' : '#555', color: 'white', cursor: 'pointer' }} title="Toggle Camera">
+                {isVideoOff ? <FiVideoOff size={24} /> : <FiVideo size={24} />}
+              </button>
+            )}
+
+            <button onClick={() => hangUp(true)} style={{ padding: '15px', borderRadius: '50%', border: 'none', backgroundColor: '#ff4757', color: 'white', cursor: 'pointer' }} title="End Call">
               <FiPhoneOff size={24} />
             </button>
           </div>
