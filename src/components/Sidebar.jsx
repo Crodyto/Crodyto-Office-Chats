@@ -203,7 +203,12 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
 
         {searchedUser && searchedUser.uid !== currentUserUid && (
           <div onClick={() => startDirectChat(searchedUser.uid)} className="chat-room-item" style={{marginTop: '10px', borderRadius: '8px', backgroundColor: '#e0e7ff', cursor: 'pointer'}}>
-            <div className="avatar">{(searchedUser.username || "U").charAt(0).toUpperCase()}</div>
+            <div style={{ position: 'relative' }}>
+              <div className="avatar">{(searchedUser.username || "U").charAt(0).toUpperCase()}</div>
+              {searchedUser.isOnline && (
+                <span style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', backgroundColor: '#25D366', borderRadius: '50%', border: '2px solid #fff' }}></span>
+              )}
+            </div>
             <div className="chat-info">
               <h4>{searchedUser.username}</h4>
             </div>
@@ -218,6 +223,7 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
           let title = "User"; 
           let subtitle = ""; 
           let isGroup = false;
+          let isUserOnline = false;
 
           if (room.type === "group") {
             title = room.groupName || "Group"; 
@@ -227,7 +233,8 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
             const otherUserUid = room.participants?.find(uid => uid !== currentUserUid);
             if (otherUserUid && usersMap[otherUserUid]) {
               title = usersMap[otherUserUid].username || "User"; 
-              subtitle = ""; 
+              isUserOnline = usersMap[otherUserUid].isOnline || false;
+              subtitle = isUserOnline ? "Online" : "Offline"; 
             }
           }
 
@@ -249,12 +256,21 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
 
           return (
             <div key={room.id} onClick={() => setActiveRoomId(room.id)} className={`chat-room-item ${activeRoomId === room.id ? "active" : ""}`}>
-              <div className="avatar" style={{ backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f' }}>
-                {isGroup ? <FiUsers /> : (title || "U").charAt(0).toUpperCase()}
+              <div style={{ position: 'relative' }}>
+                <div className="avatar" style={{ backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f' }}>
+                  {isGroup ? <FiUsers /> : (title || "U").charAt(0).toUpperCase()}
+                </div>
+                {!isGroup && isUserOnline && (
+                  <span style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', backgroundColor: '#25D366', borderRadius: '50%', border: '2px solid #fff' }}></span>
+                )}
               </div>
               <div className="chat-info" style={{ flex: 1 }}>
                 <h4>{title}</h4>
-                {subtitle && <p className={isTyping ? "typing-text-sidebar" : ""}>{subtitle}</p>}
+                {subtitle && (
+                  <p className={isTyping ? "typing-text-sidebar" : ""} style={{ color: isTyping || isUserOnline ? '#00a884' : '#667781' }}>
+                    {subtitle}
+                  </p>
+                )}
               </div>
               {unreadCount > 0 && activeRoomId !== room.id && !isTyping && (
                 <div className="unread-badge">{unreadCount}</div>
@@ -277,7 +293,10 @@ const Sidebar = ({ currentUserUid, setActiveRoomId, activeRoomId }) => {
                   return (
                     <div key={user.uid} className="user-select-item" onClick={() => toggleUserSelection(user.uid)}>
                       <input type="checkbox" checked={selectedUsers.includes(user.uid)} readOnly />
-                      <span>{user.username} <small style={{color: '#888'}}>({user.position || "Member"})</small></span>
+                      <span>
+                        {user.username} 
+                        {user.isOnline && <span style={{ color: '#25D366', fontSize: '11px', marginLeft: '6px' }}>● Online</span>}
+                      </span>
                     </div>
                   );
                 })}
