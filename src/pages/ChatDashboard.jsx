@@ -13,9 +13,10 @@ import "../App.css";
 const ChatDashboard = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeRoomId, setActiveRoomId] = useState(null);
+  const [roomData, setRoomData] = useState(null); // Notun state: Active room er full data
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
-  const [activeCallType, setActiveCallType] = useState(null); // 'audio' or 'video'
+  const [activeCallType, setActiveCallType] = useState(null); 
   const [incomingCallData, setIncomingCallData] = useState(null);
   const navigate = useNavigate();
 
@@ -36,7 +37,23 @@ const ChatDashboard = () => {
     }
   }, [currentUser]);
 
-  // Incoming Call Listener (Fixed Bug)
+  // Active Room Data Live Listener (Description ar Room ID error fix korar jonnye)
+  useEffect(() => {
+    if (!activeRoomId) {
+      setRoomData(null);
+      return;
+    }
+
+    const unsubRoom = onSnapshot(doc(db, "chatRooms", activeRoomId), (docSnap) => {
+      if (docSnap.exists()) {
+        setRoomData({ id: docSnap.id, ...docSnap.data() });
+      }
+    });
+
+    return () => unsubRoom();
+  }, [activeRoomId]);
+
+  // Incoming Call Listener
   useEffect(() => {
     if (!currentUser || !activeRoomId) return;
 
@@ -44,13 +61,8 @@ const ChatDashboard = () => {
     const unsubscribeCall = onSnapshot(callDocRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        
-        // Caller হলেDashboard Listener কোনো হস্তক্ষেপ করবে না (Modal নিজের স্টেট সামলাবে)
-        if (data.callerId === currentUser.uid) {
-          return;
-        }
+        if (data.callerId === currentUser.uid) return;
 
-        // Receiver এর জন্য চেক করা হচ্ছে
         if (data.status === "calling") {
           setIncomingCallData(data);
           setActiveCallType(data.callType);
@@ -65,7 +77,7 @@ const ChatDashboard = () => {
   }, [currentUser, activeRoomId]);
 
   const handleStartCall = (type) => {
-    setIncomingCallData(null); // Fresh call initialization
+    setIncomingCallData(null);
     setActiveCallType(type);
   };
 
@@ -127,6 +139,7 @@ const ChatDashboard = () => {
           {activeRoomId ? (
             <ChatBox 
               roomId={activeRoomId} 
+              roomData={roomData} // roomData prop hisabe pathano holo jate id ar description thake
               currentUserUid={currentUser.uid} 
               setActiveRoomId={setActiveRoomId} 
             />
