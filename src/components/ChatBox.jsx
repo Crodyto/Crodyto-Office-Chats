@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDocs, where, deleteDoc } from "firebase/firestore"; 
+import { 
+  collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, 
+  doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDocs, where, deleteDoc 
+} from "firebase/firestore"; 
 import { db } from "../firebase";
-import { FiSend, FiArrowLeft, FiUsers, FiUser } from "react-icons/fi"; // FiInfo remove kora holo
+import { FiSend, FiArrowLeft, FiUsers, FiUser } from "react-icons/fi";
 import ChatDetails from "./ChatDetails"; 
 import "../App.css";
 
@@ -19,7 +22,7 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
       let map = {};
-      snapshot.forEach((doc) => { map[doc.data().uid] = doc.data(); });
+      snapshot.forEach((doc) => { map[doc.data().uid || doc.id] = doc.data(); });
       setUsersMap(map);
     });
     return () => unsubscribe();
@@ -62,6 +65,19 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
   }, [roomId]);
 
   useEffect(() => {
+    if (!roomId || !currentUserUid || messages.length === 0) return;
+
+    messages.forEach((msg) => {
+      if (!msg.isSystemMessage && msg.senderId !== currentUserUid && (!msg.seenBy || !msg.seenBy.includes(currentUserUid))) {
+        const msgRef = doc(db, `chatRooms/${roomId}/messages`, msg.id);
+        updateDoc(msgRef, {
+          seenBy: arrayUnion(currentUserUid)
+        }).catch(e => console.error("Error updating seen status:", e));
+      }
+    });
+  }, [roomId, messages, currentUserUid]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typingUsers]);
 
@@ -81,24 +97,32 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
     if (message.trim() === "") return;
     const msgText = message;
     setMessage(""); 
-    let newUnreadCounts = { ...(roomData.unreadCounts || {}) };
-    roomData.participants.forEach(uid => {
+
+    let newUnreadCounts = { ...(roomData?.unreadCounts || {}) };
+    roomData?.participants?.forEach(uid => {
       if (uid !== currentUserUid) newUnreadCounts[uid] = (newUnreadCounts[uid] || 0) + 1; 
     });
+
     const roomRef = doc(db, "chatRooms", roomId);
     await setDoc(roomRef, { 
       typing: { [currentUserUid]: false },
       unreadCounts: newUnreadCounts
     }, { merge: true });
+
     try {
       await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-        text: msgText, senderId: currentUserUid, timestamp: serverTimestamp(),
+        text: msgText, 
+        senderId: currentUserUid, 
+        timestamp: serverTimestamp(),
+        seenBy: [currentUserUid]
       });
-    } catch (error) { console.error(error); }
+    } catch (error) { 
+      console.error(error); 
+    }
   };
 
   const formatTime = (firebaseTimestamp) => {
-    if (!firebaseTimestamp) return "Sending...";
+    if (!firebaseTimestamp) return "";
     const date = firebaseTimestamp.toDate();
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
@@ -122,6 +146,22 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
         timestamp: serverTimestamp(),
       });
     } catch (error) { console.error("Error sending system msg:", error); }
+  };
+
+  const renderTickStatus = (msg) => {
+    if (!msg.timestamp) return <span style={{ color: '#8696a0', fontSize: '11px', marginLeft: '4px' }}>🕒</span>;
+    
+    const seenBy = msg.seenBy || [msg.senderId];
+    const otherParticipants = roomData?.participants?.filter(uid => uid !== currentUserUid) || [];
+    const isSeenByAll = otherParticipants.length > 0 && otherParticipants.every(uid => seenBy.includes(uid));
+
+    if (isSeenByAll) {
+      return <span style={{ color: '#53bdeb', fontWeight: 'bold', marginLeft: '4px', fontSize: '13px' }}>✓✓</span>;
+    } else if (seenBy.length > 1) {
+      return <span style={{ color: '#8696a0', marginLeft: '4px', fontSize: '13px' }}>✓✓</span>;
+    } else {
+      return <span style={{ color: '#8696a0', marginLeft: '4px', fontSize: '13px' }}>✓</span>;
+    }
   };
 
   const creatorUid = roomData?.createdBy || (roomData?.participants ? roomData.participants[0] : null);
@@ -212,17 +252,19 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
   let chatTitle = "Loading..."; 
   let defaultSubtitle = "";
   let isGroup = false;
+  let isUserOnline = false;
 
   if (roomData) {
     if (roomData.type === "group") {
-      chatTitle = roomData.groupName; 
-      defaultSubtitle = `Group · ${roomData.participants.length} members`;
+      chatTitle = roomData.groupName || "Group"; 
+      defaultSubtitle = `${roomData.participants?.length || 0} members`;
       isGroup = true;
     } else {
-      const otherUserUid = roomData.participants.find(uid => uid !== currentUserUid);
+      const otherUserUid = roomData.participants?.find(uid => uid !== currentUserUid);
       if (otherUserUid && usersMap[otherUserUid]) {
-        chatTitle = usersMap[otherUserUid].username; 
-        defaultSubtitle = usersMap[otherUserUid].position; 
+        chatTitle = usersMap[otherUserUid].username || "User"; 
+        isUserOnline = usersMap[otherUserUid].isOnline || false;
+        defaultSubtitle = isUserOnline ? "Online" : "Offline"; 
       }
     }
   }
@@ -246,64 +288,93 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#efeae2' }}>
       
-      {/* HEADER: Kono 'Details' button nei, puro Header tai clickable */}
-      <div className="chat-header" onClick={() => setShowDetails(true)} style={{cursor: 'pointer'}}>
-        <div style={{display: 'flex', alignItems: 'center'}}>
+      {/* HEADER */}
+      <div className="chat-header" onClick={() => setShowDetails(true)} style={{ cursor: 'pointer', backgroundColor: '#f0f2f5', borderBottom: '1px solid #d1d7db' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <button className="btn-back" onClick={(e) => { e.stopPropagation(); setActiveRoomId(null); }}>
             <FiArrowLeft />
           </button>
           
-          <div className="avatar" style={{ width: '40px', height: '40px', minWidth: '40px', fontSize: '16px', backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f', marginRight: '12px' }}>
-            {isGroup ? <FiUsers /> : (chatTitle !== "Loading..." ? chatTitle.charAt(0) : <FiUser />)}
+          <div style={{ position: 'relative', marginRight: '12px' }}>
+            <div className="avatar" style={{ width: '40px', height: '40px', minWidth: '40px', fontSize: '16px', backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f' }}>
+              {isGroup ? <FiUsers /> : (chatTitle !== "Loading..." ? chatTitle.charAt(0).toUpperCase() : <FiUser />)}
+            </div>
+            {!isGroup && isUserOnline && (
+              <span style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', backgroundColor: '#25D366', borderRadius: '50%', border: '2px solid #fff' }}></span>
+            )}
           </div>
           
           <div className="chat-header-info">
-            <h4>{chatTitle}</h4>
-            {displaySubtitle && <p className={isTyping ? "typing-text-header" : ""}>{displaySubtitle}</p>}
+            <h4 style={{ margin: 0, fontSize: '16px', color: '#111b21' }}>{chatTitle}</h4>
+            {displaySubtitle && (
+              <p style={{ margin: 0, fontSize: '13px', color: isTyping || displaySubtitle === "Online" ? '#00a884' : '#667781' }}>
+                {displaySubtitle}
+              </p>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="message-list">
+      {/* MESSAGES LIST */}
+      <div className="message-list" style={{ flex: 1, padding: '15px', overflowY: 'auto' }}>
         
-        {/* --- CHAT INTRO (WhatsApp Style First Screen) --- */}
-        <div className="chat-intro">
-          <div className="avatar-large" style={{ backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f' }}>
-            {isGroup ? <FiUsers /> : (chatTitle !== "Loading..." ? chatTitle.charAt(0) : <FiUser />)}
+        {/* CHAT INTRO */}
+        <div className="chat-intro" style={{ textAlign: 'center', margin: '20px 0', opacity: 0.8 }}>
+          <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div className="avatar-large" style={{ margin: '0 auto 10px auto', width: '65px', height: '65px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: isGroup ? '#00a884' : '#dfe5e7', color: isGroup ? '#fff' : '#54656f', fontSize: '28px' }}>
+              {isGroup ? <FiUsers /> : (chatTitle !== "Loading..." ? chatTitle.charAt(0).toUpperCase() : <FiUser />)}
+            </div>
+            {!isGroup && isUserOnline && (
+              <span style={{ position: 'absolute', bottom: '12px', right: '4px', width: '14px', height: '14px', backgroundColor: '#25D366', borderRadius: '50%', border: '2px solid #fff' }}></span>
+            )}
           </div>
-          <h2>{chatTitle}</h2>
-          <p>{defaultSubtitle || "Crodyto Secure Chat"}</p>
+          <h2 style={{ fontSize: '18px', margin: '5px 0', color: '#111b21' }}>{chatTitle}</h2>
+          <p style={{ fontSize: '13px', color: '#667781' }}>{defaultSubtitle || "Crodyto Encrypted Chat"}</p>
         </div>
-        {/* ------------------------------------------------ */}
 
         {visibleMessages.map((msg, index) => {
           const currentLabel = getDateLabel(msg.timestamp);
           const previousLabel = index > 0 ? getDateLabel(visibleMessages[index - 1].timestamp) : null;
           const showDateDivider = currentLabel !== previousLabel; 
+          const isMe = msg.senderId === currentUserUid;
 
           return (
             <div key={msg.id}>
               {showDateDivider && (
-                <div className="date-divider-wrapper">
-                  <span className="date-divider">{currentLabel}</span>
+                <div className="date-divider-wrapper" style={{ textAlign: 'center', margin: '15px 0' }}>
+                  <span className="date-divider" style={{ backgroundColor: '#ffffff', color: '#54656f', fontSize: '12px', padding: '5px 12px', borderRadius: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>{currentLabel}</span>
                 </div>
               )}
               
               {msg.isSystemMessage ? (
-                <div className="system-message-wrapper">
-                  <span className="system-message">{msg.text}</span>
+                <div className="system-message-wrapper" style={{ textAlign: 'center', margin: '8px 0' }}>
+                  <span className="system-message" style={{ backgroundColor: '#ffeebd', color: '#54656f', fontSize: '12px', padding: '4px 10px', borderRadius: '6px' }}>{msg.text}</span>
                 </div>
               ) : (
-                <div className={`message-row ${msg.senderId === currentUserUid ? "my-message" : "other-message"}`}>
-                  <div className="message-content">
-                    {roomData?.type === "group" && msg.senderId !== currentUserUid && (
-                      <span className="sender-name">{usersMap[msg.senderId]?.username || "Unknown"}</span>
+                <div className={`message-row ${isMe ? "my-message" : "other-message"}`} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', marginBottom: '6px' }}>
+                  <div className="message-content" style={{ maxWidth: '75%' }}>
+                    {roomData?.type === "group" && !isMe && (
+                      <span className="sender-name" style={{ fontSize: '12px', fontWeight: 'bold', color: '#53bdeb', display: 'block', marginBottom: '2px', marginLeft: '4px' }}>
+                        {usersMap[msg.senderId]?.username || "Unknown"}
+                      </span>
                     )}
-                    <div className="message-bubble">
-                      <span className="message-text">{msg.text}</span>
-                      <span className="message-time">{formatTime(msg.timestamp)}</span>
+                    <div className="message-bubble" style={{ 
+                      backgroundColor: isMe ? '#d9fdd3' : '#ffffff', 
+                      padding: '8px 12px', 
+                      borderRadius: isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px', 
+                      boxShadow: '0 1px 1px rgba(0,0,0,0.1)',
+                      position: 'relative',
+                      display: 'inline-block',
+                      minWidth: '70px'
+                    }}>
+                      <span className="message-text" style={{ fontSize: '14px', color: '#111b21', wordBreak: 'break-word', paddingRight: '10px' }}>{msg.text}</span>
+                      
+                      <span className="message-meta" style={{ float: 'right', display: 'inline-flex', alignItems: 'center', marginTop: '4px', fontSize: '11px', color: '#667781' }}>
+                        {formatTime(msg.timestamp)}
+                        {isMe && renderTickStatus(msg)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -314,9 +385,19 @@ const ChatBox = ({ roomId, currentUserUid, setActiveRoomId }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSendMessage} className="chat-form">
-        <input type="text" placeholder="Type a message..." value={message} onChange={handleTyping} className="chat-form-input" />
-        <button type="submit" className="btn-send"><FiSend /></button>
+      {/* INPUT FORM */}
+      <form onSubmit={handleSendMessage} className="chat-form" style={{ display: 'flex', alignItems: 'center', padding: '10px 15px', backgroundColor: '#f0f2f5', gap: '10px' }}>
+        <input 
+          type="text" 
+          placeholder="Type a message..." 
+          value={message} 
+          onChange={handleTyping} 
+          className="chat-form-input" 
+          style={{ flex: 1, border: 'none', borderRadius: '8px', padding: '10px 15px', outline: 'none', fontSize: '15px', backgroundColor: '#ffffff' }} 
+        />
+        <button type="submit" className="btn-send" style={{ border: 'none', backgroundColor: '#00a884', color: '#fff', padding: '10px 14px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <FiSend size={18} />
+        </button>
       </form>
 
       {showDetails && (
