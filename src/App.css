@@ -8,14 +8,17 @@
 body {
   background-color: #f0f2f5;
   color: #111b21;
+  overflow: hidden; /* మొবাইল বডি স্ক্রোল ঠেকানোর জন্য */
 }
 
 /* --- Layout --- */
 .dashboard-container {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
+  position: relative;
 }
 
 .sidebar-container {
@@ -25,6 +28,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
 }
 
 .app-title-container {
@@ -47,7 +51,9 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   overflow: hidden;
   position: relative;
 }
@@ -280,9 +286,10 @@ body {
 /* Modal Overlay & Box */
 .modal-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(255,255,255,0.8);
+  background-color: rgba(0,0,0,0.5); /* ডার্ক ওভারলে মোবাইল ফ্রেন্ডলি করার জন্য */
   display: flex; justify-content: center; align-items: center;
   z-index: 1000;
+  padding: 15px;
 }
 .modal-box {
   background-color: #fff;
@@ -290,6 +297,8 @@ body {
   border-radius: 10px;
   width: 100%; max-width: 350px;
   box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .user-select-list {
@@ -412,10 +421,10 @@ body {
 
 @media (max-width: 768px) {
   .hide-on-mobile { display: none !important; }
-  .sidebar-container { width: 100% !important; border-right: none; height: 100vh; }
+  .sidebar-container { width: 100% !important; border-right: none; height: 100vh; height: 100dvh; }
   .main-chat-area { width: 100% !important; height: 100vh; height: 100dvh; }
   .btn-back { display: flex; align-items: center; }
-  .message-list { padding: 15px 15px !important; }
+  .message-list { padding: 15px 12px !important; }
   .chat-header { padding: 0 10px !important; }
   .chat-header-info h4 { font-size: 15px; }
   .chat-form { padding: 8px 10px !important; }
