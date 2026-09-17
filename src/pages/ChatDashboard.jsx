@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collectionGroup, query, orderBy } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import ChatBox from "../components/ChatBox";
 import Sidebar from "../components/Sidebar";
@@ -13,12 +13,15 @@ import "../App.css";
 const ChatDashboard = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeRoomId, setActiveRoomId] = useState(null);
-  const [roomData, setRoomData] = useState(null); // Notun state: Active room er full data
+  const [roomData, setRoomData] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [currentUsername, setCurrentUsername] = useState("");
   const [activeCallType, setActiveCallType] = useState(null); 
   const [incomingCallData, setIncomingCallData] = useState(null);
   const navigate = useNavigate();
+
+  const notificationAudio = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"));
+  const lastMessageTimes = useRef({});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -37,7 +40,6 @@ const ChatDashboard = () => {
     }
   }, [currentUser]);
 
-  // Active Room Data Live Listener (Description ar Room ID error fix korar jonnye)
   useEffect(() => {
     if (!activeRoomId) {
       setRoomData(null);
@@ -53,28 +55,94 @@ const ChatDashboard = () => {
     return () => unsubRoom();
   }, [activeRoomId]);
 
-  // Incoming Call Listener
+  // Global Message Listener
   useEffect(() => {
-    if (!currentUser || !activeRoomId) return;
+    if (!currentUser) return;
 
-    const callDocRef = doc(db, "rooms", activeRoomId, "calls", "currentCall");
-    const unsubscribeCall = onSnapshot(callDocRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data.callerId === currentUser.uid) return;
+    if (Notification.permission !== "granted") {
+      Notification.requestPermission();
+    }
 
-        if (data.status === "calling") {
-          setIncomingCallData(data);
-          setActiveCallType(data.callType);
-        } else if (data.status === "ended") {
-          setActiveCallType(null);
-          setIncomingCallData(null);
+    const q = query(collectionGroup(db, "messages"), orderBy("timestamp", "asc"));
+
+    const unsubscribeMessages = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const msgData = change.doc.data();
+          const msgTime = msgData.timestamp?.toMillis() || Date.now();
+          
+          if (
+            msgData.senderId !== currentUser.uid &&
+            !msgData.isSystemMessage &&
+            msgTime > (lastMessageTimes.current[change.doc.id] || 0)
+          ) {
+            lastMessageTimes.current[change.doc.id] = msgTime;
+            notificationAudio.current.play().catch(e => console.log("Audio autoplay restricted:", e));
+
+            if (Notification.permission === "granted") {
+              new Notification("Crodyto Chat", {
+                body: msgData.text || "New message received",
+                icon: "/favicon.ico"
+              });
+            }
+          }
         }
-      }
+      });
     });
 
-    return () => unsubscribeCall();
-  }, [currentUser, activeRoomId]);
+    return () => unsubscribeMessages();
+  }, [currentUser]);
+
+  // Global Incoming Call Listener
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const callsQuery = query(collectionGroup(db, "calls"));
+
+    const unsubscribeCalls = onSnapshot(callsQuery, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added" || change.type === "modified") {
+          const callData = change.doc.data();
+          
+          if (callData.callerId !== currentUser.uid && callData.status === "calling") {
+            const pathSegments = change.doc.ref.path.split("/");
+            const foundRoomId = pathSegments.length >= 2 ? pathSegments[1] : null;
+
+            if (foundRoomId) {
+              setActiveRoomId(foundRoomId);
+            }
+
+            setIncomingCallData(callData);
+            setActiveCallType(callData.callType);
+
+            notificationAudio.current.loop = true;
+            notificationAudio.current.play().catch(e => console.log("Call audio blocked:", e));
+
+            if (Notification.permission === "granted") {
+              new Notification("Incoming Call...", {
+                body: `${callData.callerName || "Someone"} is calling you (${callData.callType})`,
+                icon: "/favicon.ico"
+              });
+            }
+          } else if (callData.status === "ended" || callData.status === "answered") {
+            notificationAudio.current.pause();
+            notificationAudio.current.currentTime = 0;
+            notificationAudio.current.loop = false;
+            
+            if (callData.status === "ended") {
+              setActiveCallType(null);
+              setIncomingCallData(null);
+            }
+          }
+        }
+      });
+    });
+
+    return () => {
+      unsubscribeCalls();
+      notificationAudio.current.pause();
+    };
+  }, [currentUser]);
 
   const handleStartCall = (type) => {
     setIncomingCallData(null);
@@ -139,7 +207,7 @@ const ChatDashboard = () => {
           {activeRoomId ? (
             <ChatBox 
               roomId={activeRoomId} 
-              roomData={roomData} // roomData prop hisabe pathano holo jate id ar description thake
+              roomData={roomData} 
               currentUserUid={currentUser.uid} 
               setActiveRoomId={setActiveRoomId} 
             />
@@ -162,6 +230,9 @@ const ChatDashboard = () => {
           callType={activeCallType} 
           incomingCallData={incomingCallData}
           onClose={() => {
+            notificationAudio.current.pause();
+            notificationAudio.current.currentTime = 0;
+            notificationAudio.current.loop = false;
             setActiveCallType(null);
             setIncomingCallData(null);
           }} 
