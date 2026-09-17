@@ -24,7 +24,7 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
   const [isAnswered, setIsAnswered] = useState(false);
   const [hasAccepted, setHasAccepted] = useState(!incomingCallData);
   const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(false); // Video On/Off state
+  const [isVideoOff, setIsVideoOff] = useState(false);
 
   const pc = useRef(null);
   const localVideoRef = useRef(null);
@@ -237,6 +237,8 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
   // --- RECEIVER ACCEPT FLOW ---
   const acceptCall = async () => {
     setHasAccepted(true);
+    setIsAnswered(true);
+
     createPeerConnection();
     const stream = await getMediaStream();
     if (!stream || !pc.current) return;
@@ -260,7 +262,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
         answer: { type: answer.type, sdp: answer.sdp },
         status: "answered"
       });
-      setIsAnswered(true);
 
       while (candidateQueue.current.length > 0) {
         const cand = candidateQueue.current.shift();
@@ -279,7 +280,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     });
   };
 
-  // Toggle Microphone (Audio)
   const toggleMute = () => {
     if (!localStream) return;
     const audioTrack = localStream.getAudioTracks()[0];
@@ -289,7 +289,6 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     }
   };
 
-  // Toggle Camera (Video)
   const toggleVideo = () => {
     if (!localStream) return;
     const videoTrack = localStream.getVideoTracks()[0];
@@ -331,16 +330,57 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
     onClose();
   };
 
+  const isIncomingAudioBanner = incomingCallData && !hasAccepted && callType === "audio";
+
   return (
-    <div className="call-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="call-overlay" style={{ 
+      position: 'fixed', 
+      top: isIncomingAudioBanner ? '20px' : '0', 
+      left: isIncomingAudioBanner ? '50%' : '0', 
+      transform: isIncomingAudioBanner ? 'translateX(-50%)' : 'none',
+      width: isIncomingAudioBanner ? '90%' : '100%', 
+      maxWidth: isIncomingAudioBanner ? '400px' : '100%',
+      height: isIncomingAudioBanner ? 'auto' : '100%', 
+      backgroundColor: isIncomingAudioBanner ? '#ffffff' : 'rgba(0,0,0,0.9)', 
+      borderRadius: isIncomingAudioBanner ? '12px' : '0',
+      boxShadow: isIncomingAudioBanner ? '0 8px 24px rgba(0,0,0,0.2)' : 'none',
+      padding: isIncomingAudioBanner ? '16px' : '0',
+      zIndex: 9999, 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      justifyContent: isIncomingAudioBanner ? 'flex-start' : 'center' 
+    }}>
       
       {/* Hidden Audio Element for Remote Voice Output */}
       <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
 
-      {/* Receiver Ringing Screen */}
-      {incomingCallData && !hasAccepted ? (
+      {/* Receiver Ringing Screen for Audio (4:1 Banner style) */}
+      {isIncomingAudioBanner ? (
+        <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '45px', height: '45px', borderRadius: '50%', backgroundColor: '#00a884', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '20px' }}>
+              <FiPhone />
+            </div>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '15px', color: '#111b21' }}>Incoming Audio Call</h4>
+              <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#667781' }}>Ringing...</p>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={acceptCall} style={{ padding: '10px', borderRadius: '50%', border: 'none', backgroundColor: '#25D366', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Accept">
+              <FiPhone size={18} />
+            </button>
+            <button onClick={() => hangUp(true)} style={{ padding: '10px', borderRadius: '50%', border: 'none', backgroundColor: '#ea4335', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Decline">
+              <FiPhoneOff size={18} />
+            </button>
+          </div>
+        </div>
+      ) : incomingCallData && !hasAccepted ? (
+        /* Receiver Ringing Screen for Video (Full Screen) */
         <div style={{ textAlign: 'center', color: 'white' }}>
-          <h2 style={{ marginBottom: '10px' }}>Incoming {callType === 'video' ? 'Video' : 'Audio'} Call...</h2>
+          <h2 style={{ marginBottom: '10px' }}>Incoming Video Call...</h2>
           <p style={{ marginBottom: '30px', color: '#ccc' }}>Someone is calling you</p>
           
           <div style={{ display: 'flex', gap: '30px', justifyContent: 'center' }}>
@@ -355,7 +395,7 @@ const CallModal = ({ roomId, currentUserUid, callType, incomingCallData, onClose
       ) : (
         /* Connected / Calling Screen */
         <>
-          <h2 style={{ color: 'white', marginBottom: '20px' }}>
+          <h2 style={{ color: isIncomingAudioBanner ? '#111b21' : 'white', marginBottom: '20px' }}>
             {isAnswered ? (callType === 'video' ? 'Video Connected' : 'Audio Connected') : 'Ringing...'}
           </h2>
           
